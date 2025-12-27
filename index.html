@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 企業沉浸式藝廊 - 體感互動版</title>
+    <!-- 引入 Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- 引入 MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+    <style>
+        :root {
+            --primary-color: #00a8ff;
+            --secondary-color: #0097e6;
+            --accent-color: #e1b12c;
+            --bg-gradient: radial-gradient(circle at center, #1e272e 0%, #000000 100%);
+            --glass-bg: rgba(255, 255, 255, 0.1);
+            --glass-border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: var(--bg-gradient);
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            color: white;
+            user-select: none;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* UI 層 */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* 左側控制面板 */
+        .sidebar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 280px;
+            background: linear-gradient(90deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%);
+            padding: 20px;
+            box-sizing: border-box;
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .brand-title {
+            font-size: 24px;
+            font-weight: 300;
+            letter-spacing: 2px;
+            color: #fff;
+            margin-bottom: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.3);
+            padding-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .brand-title span { font-weight: 700; color: var(--primary-color); }
+        
+        .brand-subtitle {
+            font-size: 12px;
+            color: rgba(255,255,255,0.7);
+            letter-spacing: 1px;
+            margin-top: 5px;
+            font-weight: normal;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        button, .file-upload-label {
+            background: var(--glass-bg);
+            border: var(--glass-border);
+            color: #fff;
+            padding: 12px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            font-size: 14px;
+            backdrop-filter: blur(5px);
+            display: block;
+        }
+
+        button:hover, .file-upload-label:hover {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            box-shadow: 0 0 15px rgba(0, 168, 255, 0.4);
+        }
+
+        button.active {
+            background: var(--primary-color);
+            box-shadow: 0 0 10px var(--primary-color);
+        }
+
+        input[type="file"] { display: none; }
+
+        /* 右上角狀態 */
+        .status-bar {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 10px;
+        }
+
+        .status-item {
+            background: rgba(0, 0, 0, 0.6);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(4px);
+        }
+
+        .highlight-text { color: var(--accent-color); font-weight: bold; }
+
+        /* 作者 Logo 樣式 */
+        .author-badge {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 8px 20px 8px 8px;
+            border-radius: 50px;
+            border: 1px solid rgba(255, 215, 0, 0.3); /* 金色邊框 */
+            backdrop-filter: blur(10px);
+            pointer-events: auto;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            z-index: 50;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .author-badge:hover {
+            transform: scale(1.05);
+            background: rgba(0, 0, 0, 0.7);
+            border-color: rgba(255, 215, 0, 0.8);
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
+        }
+
+        .author-img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #ffd700;
+        }
+
+        .author-text {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .author-name {
+            font-size: 16px;
+            font-weight: bold;
+            color: #ffd700; /* 金色文字 */
+            letter-spacing: 1px;
+        }
+        
+        .author-sub {
+            font-size: 10px;
+            color: #ccc;
+            text-transform: uppercase;
+        }
+
+        /* 中間特寫圖層 (當滑鼠指到圖片時) */
+        #preview-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            width: auto;
+            height: auto;
+            max-width: 60vw;
+            max-height: 80vh;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            z-index: 20;
+            background: rgba(0,0,0,0.8);
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+        }
+
+        #preview-overlay.visible {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        #preview-img {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+        }
+
+        #preview-caption {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 16px;
+            color: #ddd;
+        }
+
+        /* 底部操作提示 */
+        .bottom-hint {
+            position: absolute;
+            bottom: 30px;
+            width: 100%;
+            text-align: center;
+            font-size: 14px;
+            color: rgba(255,255,255,0.5);
+            pointer-events: none;
+        }
+
+        .icon-hint {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            margin: 0 20px;
+        }
+
+        .icon-hint i { font-style: normal; font-size: 20px; }
+
+        #input-video { display: none; }
+        
+        #loading-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 100;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.5s;
+        }
+        .loader {
+            width: 48px; height: 48px;
+            border: 5px solid #FFF;
+            border-bottom-color: var(--primary-color);
+            border-radius: 50%;
+            animation: rotation 1s linear infinite;
+        }
+        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .hidden { opacity: 0; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+    <div id="loading-overlay">
+        <span class="loader"></span>
+        <p style="margin-top: 20px; letter-spacing: 2px;">初始化系統...</p>
+    </div>
+
+    <video id="input-video"></video>
+    <div id="canvas-container"></div>
+
+    <div id="ui-layer">
+        <div class="sidebar">
+            <div class="brand-title">
+                CORP<span>VISION</span>
+                <div class="brand-subtitle">沉浸式圖像互動展示平台</div>
+            </div>
+            
+            <div class="control-group">
+                <label for="file-upload" class="file-upload-label">
+                    📁 上傳展示照片 (可多選)
+                </label>
+                <input id="file-upload" type="file" accept="image/*" multiple>
+
+                <label for="music-upload" class="file-upload-label">
+                    🎵 上傳背景音樂 (MP3)
+                </label>
+                <input id="music-upload" type="file" accept="audio/*">
+                
+                <button id="btn-audio">🔇 開啟背景音樂/音效</button>
+
+                <button id="camera-toggle-btn">📷 啟動手勢控制</button>
+                <div style="font-size: 12px; color: #aaa; margin-top: 5px;">
+                    手勢說明:<br>
+                    ✊ 握拳：聚合 (Sphere)<br>
+                    ✋ 張手：爆炸 (Explode)<br>
+                    👋 移動：持續旋轉視角
+                </div>
+            </div>
+
+            <div class="control-group" style="margin-top: auto;">
+                 <button id="btn-reset">↺ 重置視角</button>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-item">模式: <span id="mode-text" class="highlight-text">滑鼠漫遊</span></div>
+            <div class="status-item">照片數量: <span id="count-text">0</span></div>
+        </div>
+
+        <div id="preview-overlay">
+            <img id="preview-img" src="" alt="preview">
+            <div id="preview-caption">Image Name</div>
+        </div>
+
+        <div class="bottom-hint">
+            <span class="icon-hint"><i>🖱️</i> 拖曳旋轉 / 滾輪縮放</span>
+            <span class="icon-hint"><i>✨</i> 支援 WebCam 手勢互動</span>
+        </div>
+
+        <!-- 作者 Logo (雙擊可更換) -->
+        <div class="author-badge" id="author-badge" title="雙擊可更換為您的 LOGO 圖片">
+            <!-- 預設顯示 '效' 字，雙擊可上傳 -->
+            <img id="logo-img" class="author-img" src="https://ui-avatars.com/api/?name=效&background=ffd700&color=000&size=128" alt="Logo">
+            <div class="author-text">
+                <span class="author-name">效率職人</span>
+                <span class="author-sub">DESIGN</span>
+            </div>
+            <!-- 隱藏的 LOGO 上傳 Input -->
+            <input type="file" id="logo-upload-input" accept="image/*" style="display:none">
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 0. 音效引擎 (Web Audio API)
+        // ==========================================
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.isMuted = true;
+                
+                // 預設氛圍音節點
+                this.ambientNodes = [];
+                
+                // 使用者自訂音樂節點
+                this.userAudioElement = null;
+                this.userAudioSource = null;
+                this.userAudioGain = null;
+                
+                this.isUserMusicPlaying = false;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                } else if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+                this.isMuted = false;
+                
+                // 根據是否有使用者音樂決定播放什麼
+                if (this.isUserMusicPlaying && this.userAudioElement) {
+                    this.userAudioElement.play();
+                } else {
+                    this.startAmbient();
+                }
+            }
+
+            // 停止原生的氛圍音 (切換到使用者音樂時)
+            stopAmbient() {
+                this.ambientNodes.forEach(node => {
+                    try {
+                        node.osc.stop();
+                        node.lfo.stop();
+                    } catch(e){}
+                });
+                this.ambientNodes = [];
+            }
+
+            // 生成科技感背景氛圍音 (Drone) - 預設
+            startAmbient() {
+                if(this.ambientNodes.length > 0 || this.isUserMusicPlaying) return; 
+
+                const createOsc = (freq, type, vol) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.value = freq;
+                    
+                    // LFO 讓聲音有呼吸感
+                    const lfo = this.ctx.createOscillator();
+                    lfo.frequency.value = 0.1 + Math.random() * 0.1; 
+                    const lfoGain = this.ctx.createGain();
+                    lfoGain.gain.value = vol * 0.3;
+                    
+                    lfo.connect(lfoGain);
+                    lfoGain.connect(gain.gain);
+                    
+                    gain.gain.value = vol;
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    
+                    osc.start();
+                    lfo.start();
+                    this.ambientNodes.push({osc, gain, lfo, lfoGain});
+                };
+
+                createOsc(110, 'sine', 0.05); // A2
+                createOsc(130.81, 'sine', 0.05); // C3
+                createOsc(164.81, 'sine', 0.03); // E3
+            }
+
+            // 載入使用者音樂
+            loadUserMusic(url) {
+                if (!this.ctx) this.init();
+
+                // 停止預設背景音
+                this.stopAmbient();
+                
+                // 如果已經有舊的，先移除
+                if (this.userAudioElement) {
+                    this.userAudioElement.pause();
+                    this.userAudioElement.src = '';
+                }
+
+                this.userAudioElement = new Audio(url);
+                this.userAudioElement.loop = true;
+                this.userAudioElement.crossOrigin = "anonymous";
+
+                // 連接到 Web Audio API 以便控制
+                this.userAudioSource = this.ctx.createMediaElementSource(this.userAudioElement);
+                this.userAudioGain = this.ctx.createGain();
+                this.userAudioGain.gain.value = this.isMuted ? 0 : 0.5; // 預設音量 0.5
+
+                this.userAudioSource.connect(this.userAudioGain);
+                this.userAudioGain.connect(this.ctx.destination);
+
+                this.isUserMusicPlaying = true;
+                this.userAudioElement.play().catch(e => console.log("等待使用者互動以播放音樂"));
+                
+                return true;
+            }
+
+            toggleMute() {
+                if (!this.ctx) {
+                    this.init();
+                    return false; // 現在是開啟狀態
+                }
+                
+                this.isMuted = !this.isMuted;
+                const now = this.ctx.currentTime;
+                
+                // 1. 控制預設氛圍音
+                this.ambientNodes.forEach(node => {
+                    node.gain.gain.setTargetAtTime(this.isMuted ? 0 : 0.05, now, 0.5);
+                });
+
+                // 2. 控制使用者音樂
+                if (this.userAudioGain) {
+                    this.userAudioGain.gain.setTargetAtTime(this.isMuted ? 0 : 0.5, now, 0.1);
+                }
+                
+                return this.isMuted;
+            }
+
+            // 指向圖片時的高頻嗶聲
+            playHover() {
+                if (this.isMuted || !this.ctx) return;
+                const t = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, t);
+                osc.frequency.exponentialRampToValueAtTime(1200, t + 0.1);
+                
+                gain.gain.setValueAtTime(0.03, t);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+                
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(t);
+                osc.stop(t + 0.1);
+            }
+
+            // 模式切換時的過場音效
+            playTransform(mode) {
+                if (this.isMuted || !this.ctx) return;
+                const t = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                
+                osc.type = 'triangle'; 
+                
+                if (mode === 'explode') {
+                    osc.frequency.setValueAtTime(300, t);
+                    osc.frequency.exponentialRampToValueAtTime(50, t + 1.5);
+                    gain.gain.setValueAtTime(0.1, t);
+                    gain.gain.linearRampToValueAtTime(0, t + 1.5);
+                } else {
+                    osc.frequency.setValueAtTime(50, t);
+                    osc.frequency.exponentialRampToValueAtTime(400, t + 1.0);
+                    gain.gain.setValueAtTime(0.05, t);
+                    gain.gain.linearRampToValueAtTime(0, t + 1.0);
+                }
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(t);
+                osc.stop(t + 1.5);
+            }
+        }
+
+        const soundEngine = new SoundEngine();
+
+        // ==========================================
+        // 1. 核心設定與資料
+        // ==========================================
+        // 預設圖片 (如果使用者沒上傳) - 使用顏色佔位符
+        function createPlaceholderData(count) {
+            const data = [];
+            for (let i = 0; i < count; i++) {
+                const hue = (i * 137.5) % 360;
+                data.push({
+                    id: i,
+                    type: 'placeholder',
+                    color: `hsl(${hue}, 70%, 50%)`,
+                    name: `Sample Image ${i+1}`
+                });
+            }
+            return data;
+        }
+
+        let PHOTO_DATA = createPlaceholderData(30); // 預設 30 張
+
+        // ==========================================
+        // 2. 視覺引擎 (Three.js)
+        // ==========================================
+        class VisualEngine {
+            constructor(container) {
+                this.container = container;
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x050510);
+                this.scene.fog = new THREE.FogExp2(0x050510, 0.006); // 減輕霧氣，看得更遠
+
+                this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+                this.camera.position.set(0, 0, 100);
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                this.container.appendChild(this.renderer.domElement);
+
+                this.group = new THREE.Group();
+                this.scene.add(this.group);
+
+                this.particles = [];
+                this.raycaster = new THREE.Raycaster();
+                
+                // 控制變數
+                this.rotationSpeedY = 0;
+                this.rotationSpeedX = 0;
+                this.targetZoom = 100;
+
+                this.initLights();
+                this.initBackgroundParticles();
+                this.generateGallery(PHOTO_DATA);
+
+                window.addEventListener('resize', () => this.onResize());
+            }
+
+            initLights() {
+                const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+                this.scene.add(ambient);
+                
+                const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+                dirLight.position.set(10, 20, 30);
+                this.scene.add(dirLight);
+
+                const spotLight = new THREE.SpotLight(0x00a8ff, 2);
+                spotLight.position.set(0, 50, 0);
+                this.scene.add(spotLight);
+            }
+
+            initBackgroundParticles() {
+                const geom = new THREE.BufferGeometry();
+                const pos = [];
+                for(let i=0; i<2000; i++) {
+                    pos.push((Math.random()-0.5)*500, (Math.random()-0.5)*500, (Math.random()-0.5)*500);
+                }
+                geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+                const mat = new THREE.PointsMaterial({ color: 0x445566, size: 0.8, transparent: true, opacity: 0.6 });
+                this.bgStars = new THREE.Points(geom, mat);
+                this.scene.add(this.bgStars);
+            }
+
+            // 創建圖片材質
+            createTexture(item, onLoad) {
+                if (item.type === 'image') {
+                    const loader = new THREE.TextureLoader();
+                    return loader.load(item.url, onLoad);
+                } else {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 256; canvas.height = 192;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = item.color;
+                    ctx.fillRect(0,0,256,192);
+                    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+                    ctx.lineWidth = 10;
+                    ctx.strokeRect(0,0,256,192);
+                    ctx.fillStyle = "rgba(0,0,0,0.3)";
+                    ctx.font = "20px Arial";
+                    ctx.textAlign = "center";
+                    ctx.fillText("NO IMAGE", 128, 96);
+                    return new THREE.CanvasTexture(canvas);
+                }
+            }
+
+            generateGallery(data) {
+                this.particles.forEach(p => {
+                    this.group.remove(p.mesh);
+                    if(p.mesh.material.map) p.mesh.material.map.dispose();
+                    p.mesh.geometry.dispose();
+                });
+                this.particles = [];
+
+                const count = data.length;
+
+                data.forEach((item, i) => {
+                    let material;
+                    // 預設幾何形狀 (載入中)
+                    let geometry = new THREE.PlaneGeometry(16, 12);
+
+                    if (item.type === 'image') {
+                        // 如果是圖片，使用 TextureLoader 並在載入後更新幾何比例
+                        const loader = new THREE.TextureLoader();
+                        const texture = loader.load(item.url, (tex) => {
+                            const img = tex.image;
+                            if (img.width && img.height) {
+                                const aspect = img.width / img.height;
+                                let w, h;
+                                
+                                // 根據圖片比例調整幾何形狀，保持視覺大小一致
+                                if (aspect >= 1.0) {
+                                    // 橫向圖片：固定寬度 16
+                                    w = 16;
+                                    h = 16 / aspect;
+                                } else {
+                                    // 直向圖片：固定高度 12
+                                    h = 12;
+                                    w = 12 * aspect;
+                                }
+                                
+                                mesh.geometry.dispose();
+                                mesh.geometry = new THREE.PlaneGeometry(w, h);
+                            }
+                        });
+
+                        material = new THREE.MeshBasicMaterial({
+                            map: texture,
+                            side: THREE.DoubleSide,
+                            transparent: true,
+                            opacity: 0.9
+                        });
+                    } else {
+                        // 佔位符
+                        material = new THREE.MeshBasicMaterial({
+                            map: this.createTexture(item),
+                            side: THREE.DoubleSide,
+                            transparent: true,
+                            opacity: 0.9
+                        });
+                    }
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.userData = { id: i, data: item };
+
+                    // 1. Sphere 佈局 (緊湊球體)
+                    const phi = Math.acos(-1 + (2 * i) / count);
+                    const theta = Math.sqrt(count * Math.PI) * phi;
+                    const radius = 25;
+                    const spherePos = new THREE.Vector3(
+                        radius * Math.cos(theta) * Math.sin(phi),
+                        radius * Math.sin(theta) * Math.sin(phi),
+                        radius * Math.cos(phi)
+                    );
+
+                    // 2. Explosion 佈局 (隨機散開，不規律)
+                    // 使用球坐標隨機生成，但半徑範圍較大，形成爆炸感
+                    const exRadius = 50 + Math.random() * 80; // 半徑 50~130
+                    const exTheta = Math.random() * Math.PI * 2;
+                    const exPhi = Math.acos(2 * Math.random() - 1);
+                    const explodePos = new THREE.Vector3(
+                        exRadius * Math.sin(exPhi) * Math.cos(exTheta),
+                        exRadius * Math.sin(exPhi) * Math.sin(exTheta),
+                        exRadius * Math.cos(exPhi)
+                    );
+
+                    mesh.position.copy(spherePos);
+                    mesh.lookAt(new THREE.Vector3(0,0,0));
+                    mesh.scale.set(0.5, 0.5, 0.5);
+
+                    this.group.add(mesh);
+
+                    this.particles.push({
+                        mesh: mesh,
+                        spherePos: spherePos,
+                        explodePos: explodePos,
+                        currentPos: spherePos.clone(),
+                        isHovered: false,
+                        randomOffset: Math.random() // 用於漂浮動畫
+                    });
+                });
+                
+                document.getElementById('count-text').innerText = count;
+            }
+
+            checkIntersection(mouse, camera) {
+                this.raycaster.setFromCamera(mouse, camera);
+                const intersects = this.raycaster.intersectObjects(this.group.children);
+                return intersects.length > 0 ? intersects[0].object : null;
+            }
+
+            animate(mode, dt, time) {
+                // 持續旋轉邏輯 (基於速度)
+                this.group.rotation.y += this.rotationSpeedY;
+                this.group.rotation.x += this.rotationSpeedX;
+
+                // 阻尼效果：如果沒有手勢輸入，速度慢慢歸零 (可選，這裡設為緩慢減速)
+                this.rotationSpeedY *= 0.95; 
+                this.rotationSpeedX *= 0.95;
+
+                this.camera.position.z += (this.targetZoom - this.camera.position.z) * 0.05;
+                this.bgStars.rotation.y = time * 0.02;
+
+                const isSphereMode = (mode === 'sphere');
+
+                this.particles.forEach(p => {
+                    const targetPos = isSphereMode ? p.spherePos : p.explodePos;
+                    
+                    // [修改] 縮放邏輯：爆炸模式下預設放大 (1.5倍)
+                    let targetScale = 1.0;
+                    if (p.isHovered) {
+                        targetScale = 2.5; // Hover 時更大
+                    } else {
+                        targetScale = isSphereMode ? 0.5 : 1.5; // Explode 模式預設 1.5 倍
+                    }
+                    
+                    p.mesh.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), dt * 3.0);
+                    p.mesh.position.lerp(targetPos, dt * 1.5);
+
+                    const tempVec = new THREE.Vector3();
+                    if (isSphereMode) {
+                        tempVec.set(0,0,0);
+                        p.mesh.lookAt(tempVec);
+                    } else {
+                        // Explode: 永遠面向相機
+                        p.mesh.lookAt(this.camera.position);
+                        
+                        // 加入一點隨機漂浮
+                        p.mesh.position.y += Math.sin(time * 2 + p.randomOffset * 10) * 0.05;
+                    }
+                });
+
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            onResize() {
+                this.camera.aspect = window.innerWidth / window.innerHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        }
+
+        // ==========================================
+        // 3. 邏輯控制
+        // ==========================================
+        const visualEngine = new VisualEngine(document.getElementById('canvas-container'));
+        const ui = {
+            loading: document.getElementById('loading-overlay'),
+            previewOverlay: document.getElementById('preview-overlay'),
+            previewImg: document.getElementById('preview-img'),
+            previewCaption: document.getElementById('preview-caption'),
+            modeText: document.getElementById('mode-text'),
+            fileInput: document.getElementById('file-upload'),
+            musicInput: document.getElementById('music-upload'),
+            video: document.getElementById('input-video'),
+            btnAudio: document.getElementById('btn-audio') // 音效按鈕
+        };
+
+        let state = {
+            layoutMode: 'sphere', // 'sphere' or 'explode'
+            isCameraActive: false,
+            isHovering: false,
+            lastHoveredId: -1 // 用於音效去重
+        };
+
+        setTimeout(() => ui.loading.classList.add('hidden'), 1500);
+
+        // --- Logo 更換邏輯 ---
+        const authorBadge = document.getElementById('author-badge');
+        const logoInput = document.getElementById('logo-upload-input');
+        const logoImg = document.getElementById('logo-img');
+
+        authorBadge.addEventListener('dblclick', function() {
+            logoInput.click();
+        });
+
+        logoInput.addEventListener('change', function(e) {
+            if (this.files && this.files.length > 0) {
+                const url = URL.createObjectURL(this.files[0]);
+                logoImg.src = url;
+            }
+        });
+
+        // --- 音效按鈕控制 ---
+        ui.btnAudio.addEventListener('click', function() {
+            const isMuted = soundEngine.toggleMute();
+            if (isMuted) {
+                this.innerText = "🔇 開啟背景音樂/音效";
+                this.classList.remove('active');
+            } else {
+                this.innerText = "🔊 音效已開啟";
+                this.classList.add('active');
+            }
+        });
+
+        // --- 照片上傳 ---
+        ui.fileInput.addEventListener('change', function(e) {
+            if (this.files && this.files.length > 0) {
+                // 如果是第一次互動，嘗試初始化音效
+                soundEngine.init();
+
+                const newPhotos = [];
+                Array.from(this.files).forEach((file, index) => {
+                    const url = URL.createObjectURL(file);
+                    newPhotos.push({
+                        id: index,
+                        type: 'image',
+                        url: url,
+                        name: file.name
+                    });
+                });
+                PHOTO_DATA = newPhotos;
+                visualEngine.generateGallery(PHOTO_DATA);
+            }
+        });
+
+        // --- 音樂上傳 ---
+        ui.musicInput.addEventListener('change', function(e) {
+            if (this.files && this.files.length > 0) {
+                const file = this.files[0];
+                const url = URL.createObjectURL(file);
+                soundEngine.loadUserMusic(url);
+                ui.btnAudio.innerText = "🔊 播放自訂音樂中";
+                ui.btnAudio.classList.add('active');
+            }
+        });
+
+        // --- 滑鼠互動 ---
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+
+        document.addEventListener('mousedown', () => isDragging = true);
+        document.addEventListener('mouseup', () => isDragging = false);
+        
+        document.addEventListener('mousemove', (e) => {
+            const mouse = new THREE.Vector2();
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            
+            const hit = visualEngine.checkIntersection(mouse, visualEngine.camera);
+            visualEngine.particles.forEach(p => p.isHovered = false);
+
+            if (hit) {
+                document.body.style.cursor = 'pointer';
+                const particle = visualEngine.particles.find(p => p.mesh === hit);
+                if(particle) {
+                    particle.isHovered = true;
+                    // 音效觸發邏輯：只有當目標改變時才播放
+                    if (state.lastHoveredId !== particle.mesh.userData.id) {
+                        soundEngine.playHover();
+                        state.lastHoveredId = particle.mesh.userData.id;
+                    }
+                }
+
+                const data = hit.userData.data;
+                ui.previewImg.src = data.type === 'image' ? data.url : '';
+                ui.previewImg.style.display = data.type === 'image' ? 'block' : 'none';
+                ui.previewCaption.innerText = data.name;
+                ui.previewOverlay.classList.add('visible');
+                hit.material.opacity = 1;
+            } else {
+                document.body.style.cursor = 'default';
+                ui.previewOverlay.classList.remove('visible');
+                state.lastHoveredId = -1; // 重置
+                visualEngine.particles.forEach(p => {
+                    p.mesh.material.opacity = 0.9;
+                });
+            }
+
+            // 滑鼠拖曳 (直接改變位置，不使用速度模式，較直覺)
+            if (isDragging && !state.isCameraActive) {
+                const deltaMove = {
+                    x: e.clientX - previousMousePosition.x,
+                    y: e.clientY - previousMousePosition.y
+                };
+                visualEngine.group.rotation.y += deltaMove.x * 0.005;
+                visualEngine.group.rotation.x += deltaMove.y * 0.005;
+            }
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        document.addEventListener('wheel', (e) => {
+            visualEngine.targetZoom += e.deltaY * 0.1;
+            visualEngine.targetZoom = Math.max(20, Math.min(300, visualEngine.targetZoom));
+        });
+
+        document.getElementById('btn-reset').addEventListener('click', () => {
+            visualEngine.group.rotation.set(0,0,0);
+            visualEngine.targetZoom = 100;
+        });
+
+        // --- MediaPipe 手勢控制 (改良版) ---
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+        
+        hands.onResults((results) => {
+            if (results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // 1. 判斷手勢 (握拳 vs 張開)
+                const wrist = landmarks[0];
+                const tips = [4,8,12,16,20];
+                let distSum = 0;
+                tips.forEach(i => {
+                    const dx = landmarks[i].x - wrist.x;
+                    const dy = landmarks[i].y - wrist.y;
+                    distSum += Math.sqrt(dx*dx + dy*dy);
+                });
+                const avgDist = distSum / 5;
+                const isFist = avgDist < 0.25;
+
+                // 模式切換邏輯
+                if (isFist && state.layoutMode !== 'sphere') {
+                    state.layoutMode = 'sphere';
+                    ui.modeText.innerText = "全球視野 (Sphere)";
+                    soundEngine.playTransform('sphere'); // 播放聚合音效
+                } else if (!isFist && state.layoutMode !== 'explode') {
+                    state.layoutMode = 'explode';
+                    ui.modeText.innerText = "爆炸散開 (Explode)";
+                    soundEngine.playTransform('explode'); // 播放散開音效
+                }
+
+                // 2. 控制旋轉 (改良：速度控制模式)
+                const handCenter = landmarks[9];
+                
+                // 計算偏離中心的距離 (-0.5 ~ 0.5)
+                const deltaX = (handCenter.x - 0.5); 
+                const deltaY = (handCenter.y - 0.5);
+
+                // 死區 (Deadzone)：手在中間時不旋轉
+                const deadzone = 0.1; 
+                
+                if (Math.abs(deltaX) > deadzone) {
+                    // 手往左移 (deltaX < 0) -> 場景往左轉 (rotateY > 0) -> 反向
+                    // 根據偏離程度加速
+                    visualEngine.rotationSpeedY = -deltaX * 0.05; 
+                } else {
+                    visualEngine.rotationSpeedY = 0;
+                }
+
+                if (Math.abs(deltaY) > deadzone) {
+                    visualEngine.rotationSpeedX = deltaY * 0.03; 
+                } else {
+                    visualEngine.rotationSpeedX = 0;
+                }
+
+            } else {
+                // 沒有手的時候停止自動旋轉
+                visualEngine.rotationSpeedY = 0;
+                visualEngine.rotationSpeedX = 0;
+            }
+        });
+
+        const camera = new Camera(ui.video, {
+            onFrame: async () => { if (state.isCameraActive) await hands.send({image: ui.video}); },
+            width: 640, height: 480
+        });
+
+        document.getElementById('camera-toggle-btn').addEventListener('click', async function() {
+            // 嘗試開啟音效
+            soundEngine.init();
+
+            if (!state.isCameraActive) {
+                this.innerText = "⏳ 啟動中...";
+                try {
+                    await camera.start();
+                    state.isCameraActive = true;
+                    this.innerText = "⏹ 停止手勢控制";
+                    this.classList.add('active');
+                    ui.modeText.innerText = "手勢偵測中...";
+                } catch(e) {
+                    alert("無法存取 Webcam，請確認權限。");
+                    this.innerText = "📷 啟動手勢控制";
+                }
+            } else {
+                location.reload(); 
+            }
+        });
+
+        const clock = new THREE.Clock();
+        function loop() {
+            requestAnimationFrame(loop);
+            const dt = clock.getDelta();
+            const time = clock.getElapsedTime();
+            visualEngine.animate(state.layoutMode, dt, time);
+        }
+        loop();
+
+    </script>
+</body>
+</html>
